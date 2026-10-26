@@ -48,7 +48,7 @@ MAIN_ADMIN_ID = int(MAIN_ADMIN_IDS_ENV[0])  # kept for backward-compat display p
 VPS_USER_ROLE_ID = int(os.getenv('VPS_USER_ROLE_ID', '1210291131301101618'))
 DEFAULT_STORAGE_POOL = os.getenv('DEFAULT_STORAGE_POOL', 'default')
 BOT_VERSION = os.getenv('BOT_VERSION', '9.0-PRO')
-BOT_DEVELOPER = os.getenv('BOT_DEVELOPER', 'EVILSAAD')
+BOT_DEVELOPER = os.getenv('BOT_DEVELOPER', 'FaiLive2')
 
 # OS Options for VPS Creation and Reinstall
 OS_OPTIONS = [
@@ -1457,7 +1457,9 @@ class ManageView(discord.ui.View):
         if self.initial_embed is not None:
             return self.initial_embed
         self.initial_embed = await self.create_vps_embed(self.selected_index)
-        return self.initial_embed    async def create_vps_embed(self, index):
+        return self.initial_embed
+
+    async def create_vps_embed(self, index):
         vps = self.vps_list[index]
         node = get_node(vps['node_id'])
         node_name = node['name'] if node else "Unknown"
@@ -2097,7 +2099,7 @@ async def vps_list(ctx, node_id: int = 1):
             )
             chunk_text = "\n".join(chunk)
             add_field(page_embed, "📋 **VPS List**", f"```{chunk_text}```", False)
-            page_embed.set_footer(text=f"Total: {total_vps} VPS | Powered by Your Bot")
+            page_embed.set_footer(text=f"Total: {total_vps} VPS | Powered by {BOT_NAME}")
             await ctx.send(embed=page_embed)
     else:
         add_field(embed, "📋 **VPS List**", "No deployments yet. Launch one! 🚀", False)
@@ -2406,7 +2408,7 @@ async def delete_vps(ctx, user: discord.Member, vps_number: int, *, reason: str 
     save_vps_data()
 
     # 4️⃣ Success embed
-    embed = create_success_embed("🌟 UnixNodes - VPS Deleted Successfully")
+    embed = create_success_embed(f"🌟 {BOT_NAME} - VPS Deleted Successfully")
     add_field(embed, "Owner", user.mention, True)
     add_field(embed, "VPS Number", f"#{vps_number}", True)
     add_field(embed, "Container", container_name, False)
@@ -3052,7 +3054,7 @@ async def user_info(ctx, user: discord.Member):
             inline=False
         )
 
-    embed.set_footer(text="UnixNodes • User Resource Dashboard")
+    embed.set_footer(text=f"{BOT_NAME} • User Resource Dashboard")
     embed.timestamp = ctx.message.created_at
 
     await ctx.send(embed=embed)
@@ -3172,7 +3174,7 @@ async def server_stats(ctx):
         inline=True
     )
 
-    embed.set_footer(text="UnixNodes • Real-Time Monitoring")
+    embed.set_footer(text=f"{BOT_NAME} • Real-Time Monitoring")
     embed.timestamp = ctx.message.created_at
 
     await ctx.send(embed=embed)
@@ -4426,11 +4428,15 @@ class HelpView(discord.ui.View):
         self.add_item(self.select)
 
     def update_select(self):
+        """Update the category selection dropdown based on user permissions"""
         self.select = discord.ui.Select(placeholder="Select Category", options=[])
         user_id = str(self.ctx.author.id)
         is_admin_user = user_id in main_admin_ids or user_id in admin_data.get("admins", [])
         is_main_admin_user = user_id in main_admin_ids
+       
+        # Add all categories that user has access to
         options = []
+        # Always show basic categories
         basic_categories = ["user", "vps", "ports", "system", "bot"]
         for category in basic_categories:
             options.append(discord.SelectOption(
@@ -4438,36 +4444,45 @@ class HelpView(discord.ui.View):
                 value=category,
                 emoji=self.get_category_emoji(category)
             ))
+       
+        # Add nodes category if admin
         if is_admin_user:
             options.append(discord.SelectOption(
                 label=self.command_categories["nodes"]["name"],
                 value="nodes",
                 emoji=self.get_category_emoji("nodes")
             ))
+       
+        # Add admin categories if user has permissions
         if is_admin_user:
             options.append(discord.SelectOption(
                 label=self.command_categories["admin"]["name"],
                 value="admin",
                 emoji=self.get_category_emoji("admin")
             ))
+       
         if is_main_admin_user:
             options.append(discord.SelectOption(
                 label=self.command_categories["main_admin"]["name"],
                 value="main_admin",
                 emoji=self.get_category_emoji("main_admin")
             ))
+       
         self.select.options = options
         self.select.callback = self.select_callback
    
     async def select_callback(self, interaction: discord.Interaction):
+        """Handle category selection"""
         if interaction.user != self.ctx.author:
             await interaction.response.send_message("This menu is not for you!", ephemeral=True)
             return
+        
         self.current_category = interaction.data['values'][0]
         self.update_embed()
         await interaction.response.edit_message(embed=self.embed, view=self)
 
     def get_category_emoji(self, category):
+        """Get emoji for each category"""
         emojis = {
             "user": "👤",
             "vps": "🖥️",
@@ -4481,20 +4496,25 @@ class HelpView(discord.ui.View):
         return emojis.get(category, "📁")
    
     def update_embed(self):
+        """Update the embed based on current category and user permissions"""
         category_data = self.command_categories[self.current_category]
+        # Create embed with category-specific styling
         colors = {
-            "user": 0x3498db,
-            "vps": 0x2ecc71,
-            "ports": 0xe74c3c,
-            "system": 0xf39c12,
-            "bot": 0x9b59b6,
-            "nodes": 0x1abc9c,
-            "admin": 0xe67e22,
-            "main_admin": 0xf1c40f
+            "user": 0x3498db, # Blue
+            "vps": 0x2ecc71, # Green
+            "ports": 0xe74c3c, # Red
+            "system": 0xf39c12, # Orange
+            "bot": 0x9b59b6, # Purple
+            "nodes": 0x1abc9c, # Teal
+            "admin": 0xe67e22, # Carrot
+            "main_admin": 0xf1c40f # Yellow
         }
         color = colors.get(self.current_category, 0x1a1a1a)
+       
         title = f"📚 {BOT_NAME} Command Help - {category_data['name']}"
         description = f"**{category_data['name']}**\nUse the dropdown below to switch categories."
+       
+        # Add helpful tips based on category
         tips = {
             "user": "Tip: Use `!myvps` to see all your VPS and `!manage` to control them.",
             "vps": "Tip: Snapshots are useful before making major changes to your VPS.",
@@ -4504,11 +4524,17 @@ class HelpView(discord.ui.View):
             "admin": "Tip: Always check `!userinfo @user` before modifying VPS.",
             "main_admin": "Tip: Be careful when adding/removing admin privileges."
         }
+       
         if self.current_category in tips:
             description += f"\n\n💡 {tips[self.current_category]}"
+       
         self.embed = create_embed(title, description, color)
+       
+        # Add commands to embed
         commands_text = "\n".join([f"**{cmd}** - {desc}" for cmd, desc in category_data["commands"]])
         add_field(self.embed, "Commands", commands_text, False)
+       
+        # Add appropriate footer based on category
         footers = {
             "user": f"{BOT_NAME} VPS Manager • User Commands • Need help? Contact admin",
             "vps": f"{BOT_NAME} VPS Manager • VPS Management • Snapshots • Cloning",
@@ -4519,15 +4545,18 @@ class HelpView(discord.ui.View):
             "admin": f"{BOT_NAME} VPS Manager • Admin Panel • Restricted Access",
             "main_admin": f"{BOT_NAME} VPS Manager • Main Admin • Full System Control"
         }
+       
         self.embed.set_footer(text=footers.get(self.current_category, f"{BOT_NAME} VPS Manager"))
 
 
 @bot.command(name='help')
 async def show_help(ctx):
+    """Display the interactive help menu"""
     view = HelpView(ctx)
     await ctx.send(embed=view.embed, view=view)
 
 
+# Command aliases for typos and convenience
 @bot.command(name='mangage')
 async def manage_typo(ctx):
     await ctx.send(embed=create_info_embed("Command Correction", f"Did you mean `{PREFIX}manage`? Use the correct command."))
@@ -4535,6 +4564,7 @@ async def manage_typo(ctx):
 
 @bot.command(name='commands')
 async def commands_alias(ctx):
+    """Alias for help command"""
     await show_help(ctx)
 
 
@@ -4555,7 +4585,6 @@ async def info_alias(ctx, user: discord.Member = None):
             await ctx.send(embed=create_error_embed("Usage", f"Please specify a user: `{PREFIX}info @user`"))
     else:
         await ctx.send(embed=create_error_embed("Access Denied", "This command requires admin privileges."))
-
 # Run the bot
 if __name__ == "__main__":
     if DISCORD_TOKEN:
