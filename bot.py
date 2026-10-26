@@ -20,7 +20,7 @@ import re
 
 # Load environment variables
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN', '')
-BOT_NAME = os.getenv('BOT_NAME', 'DB-v2')
+BOT_NAME = os.getenv('BOT_NAME', 'FaiLive2 Cloud')
 PREFIX = os.getenv('PREFIX', '!')
 YOUR_SERVER_IP = os.getenv('YOUR_SERVER_IP', '127.0.0.1')
 
@@ -442,7 +442,7 @@ def create_embed(title, description="", color=0x1a1a1a):
         description=truncate_text(description, 4096),
         color=color
     )
-    embed.set_thumbnail(url=""
+    embed.set_thumbnail(url="")
     embed.set_footer(text=f"{BOT_NAME} VPS Manager v{BOT_VERSION} • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                      icon_url="")
     return embed
@@ -719,7 +719,7 @@ async def establish_pinggy_tunnel(container_name: str, node_id: int, retries: in
     logger.warning(f"Pinggy: no tunnel address found for {container_name} after {retries} attempts")
     return None
 
-# Get or create VPS role
+# Get or create VPS role (FaiLive2-VPS-USER)
 async def get_or_create_vps_role(guild):
     global VPS_USER_ROLE_ID
 
@@ -727,7 +727,7 @@ async def get_or_create_vps_role(guild):
     if not me or not me.guild_permissions.manage_roles:
         return None
 
-    role_name = f"{BOT_NAME} VPS User"
+    role_name = "FaiLive2-VPS-USER"
 
     # Try cached role
     if VPS_USER_ROLE_ID:
@@ -1457,9 +1457,7 @@ class ManageView(discord.ui.View):
         if self.initial_embed is not None:
             return self.initial_embed
         self.initial_embed = await self.create_vps_embed(self.selected_index)
-        return self.initial_embed
-
-    async def create_vps_embed(self, index):
+        return self.initial_embed    async def create_vps_embed(self, index):
         vps = self.vps_list[index]
         node = get_node(vps['node_id'])
         node_name = node['name'] if node else "Unknown"
@@ -1536,6 +1534,11 @@ class ManageView(discord.ui.View):
             reconnect_button = discord.ui.Button(label="🔌 Reconnect Tunnel", style=discord.ButtonStyle.primary)
             reconnect_button.callback = lambda inter: self.action_callback(inter, 'reconnect_tunnel')
             self.add_item(reconnect_button)
+        # NEW: Delete VPS button (owner only)
+        if not self.is_shared and not self.is_admin:
+            delete_button = discord.ui.Button(label="🗑️ Delete VPS", style=discord.ButtonStyle.danger, row=1)
+            delete_button.callback = lambda inter: self.action_callback(inter, 'delete_self')
+            self.add_item(delete_button)
 
     async def select_vps(self, interaction: discord.Interaction):
         if str(interaction.user.id) != self.user_id and not self.is_admin:
@@ -1558,11 +1561,151 @@ class ManageView(discord.ui.View):
         actual_idx = self.actual_index if self.is_shared else self.indices[self.selected_index]
         target_vps = vps_data[self.owner_id][actual_idx]
         suspended = target_vps.get('suspended', False)
-        if suspended and not self.is_admin and action != 'stats':
+        if suspended and not self.is_admin and action != 'stats' and action != 'delete_self':
             await interaction.response.send_message(embed=create_error_embed("Access Denied", "This VPS is suspended. Contact an admin to unsuspend."), ephemeral=True)
             return
         container_name = target_vps["container_name"]
         node_id = target_vps['node_id']
+
+        # ---------- DELETE SELF (owner-only) ----------
+        if action == 'delete_self':
+            if self.is_shared or self.is_admin:
+                await interaction.response.send_message(embed=create_error_embed("Access Denied", "Only the VPS owner can delete it from this panel."), ephemeral=True)
+                return
+            confirm_embed = create_warning_embed(
+                "🗑️ Delete VPS - Confirm",
+                f"⚠️ **WARNING:** You are about to permanently delete VPS `{container_name}`.\n\n"
+                f"This will erase **all data** on the VPS and remove it from your account.\n"
+                f"**This action cannot be undone!**"
+            )
+            add_field(confirm_embed, "VPS Details", f"**Configuration:** {target_vps.get('config', 'Custom')}\n**Status:** {target_vps.get('status', 'unknown').upper()}", False)
+
+            class DeleteConfirmView(discord.ui.View):
+                def __init__(self, parent_view, container_name, owner_id, actual_idx, node_id):
+                    super().__init__(timeout=60)
+                    self.parent_view = parent_view
+                    self.container_name = container_name
+                    self.owner_id = owner_id
+                    self.actual_idx = actual_idx
+                    self.node_id = node_id
+
+                @discord.ui.button(label="✅ Confirm Delete", style=discord.ButtonStyle.danger)
+                async def confirm(self, inter: discord.Interaction, item: discord.ui.Button):
+                    if str(inter.user.id) != self.parent_view.user_id:
+                        await inter.response.send_message(embed=create_error_embed("Access Denied", "Only the owner can confirm."), ephemeral=True)
+                        return
+                    await inter.response.defer(ephemeral=True)
+                    try:
+                        # 1. Delete container
+                        delete_result = "Container deleted successfully."
+                        try:
+                            await execute_lxc(self.container_name, f"delete {self.container_name} --force", node_id=self.node_id)
+                        except Exception as e:
+                            err = str(e).lower()
+                            if any(x in err for x in ["not found", "does not exist", "no such container"]):
+                                delete_result = "Container not found (force DB cleanup)."
+                            else:
+                                delete_result = f"Container delete failed: {e}"
+
+                        # 2. Remove from DB
+                        conn = get_db()
+                        cur = conn.cursor()
+                        cur.execute("DELETE FROM vps WHERE container_name = ?", (self.container_name,))
+                        cur.execute("DELETE FROM port_forwards WHERE vps_container = ?", (self.container_name,))
+                        conn.commit()
+                        conn.close()
+
+                        # 3. Remove from memory
+                        try:
+                            del vps_data[self.owner_id][self.actual_idx]
+                        except Exception:
+                            pass
+
+                        # 4. Remove role if user has no more VPS
+                        if not vps_data.get(self.owner_id):
+                            vps_data.pop(self.owner_id, None)
+                            if inter.guild:
+                                role = await get_or_create_vps_role(inter.guild)
+                                if role:
+                                    try:
+                                        member = inter.guild.get_member(int(self.owner_id))
+                                        if member and role in member.roles:
+                                            await member.remove_roles(role, reason="No VPS ownership")
+                                    except Exception as role_err:
+                                        logger.warning(f"Failed to remove VPS role: {role_err}")
+
+                        save_vps_data()
+
+                        # 5. Build result embed + DM
+                        result_embed = create_success_embed("🗑️ VPS Deleted", f"VPS `{self.container_name}` has been deleted.")
+                        add_field(result_embed, "Details", f"**Container:** `{self.container_name}`\n**Status:** {delete_result}", False)
+
+                        try:
+                            owner_user = await bot.fetch_user(int(self.owner_id))
+                            dm_embed = create_warning_embed(
+                                "VPS Deleted",
+                                f"Your VPS `{self.container_name}` has been deleted from your account.\n\n"
+                                f"If you did not request this, contact an admin immediately."
+                            )
+                            await owner_user.send(embed=dm_embed)
+                        except Exception:
+                            pass
+
+                        await inter.followup.send(embed=result_embed, ephemeral=True)
+                        self.stop()
+
+                        # 6. Refresh manage panel
+                        try:
+                            if vps_data.get(self.owner_id):
+                                new_view = ManageView(
+                                    self.parent_view.user_id,
+                                    vps_data[self.owner_id],
+                                    is_shared=False,
+                                    owner_id=self.owner_id,
+                                    is_admin=False
+                                )
+                                new_embed = await new_view.get_initial_embed()
+                                try:
+                                    await inter.message.edit(embed=new_embed, view=new_view)
+                                except Exception:
+                                    pass
+                            else:
+                                no_vps_embed = create_info_embed(
+                                    "No VPS Remaining",
+                                    "You don't have any VPS on this account anymore.\nContact an admin to request a new one."
+                                )
+                                try:
+                                    await inter.message.edit(embed=no_vps_embed, view=None)
+                                except Exception:
+                                    pass
+                        except Exception as refresh_err:
+                            logger.warning(f"Failed to refresh manage panel after delete: {refresh_err}")
+
+                    except Exception as e:
+                        await inter.followup.send(embed=create_error_embed("Delete Failed", f"Error: {str(e)}"), ephemeral=True)
+                        self.stop()
+
+                @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
+                async def cancel(self, inter: discord.Interaction, item: discord.ui.Button):
+                    if str(inter.user.id) != self.parent_view.user_id:
+                        await inter.response.send_message(embed=create_error_embed("Access Denied", "Only the owner can cancel."), ephemeral=True)
+                        return
+                    await inter.response.defer()
+                    try:
+                        new_embed = await self.parent_view.create_vps_embed(self.parent_view.selected_index)
+                        await inter.message.edit(embed=new_embed, view=self.parent_view)
+                    except Exception:
+                        pass
+                    self.stop()
+
+            await interaction.response.send_message(
+                embed=confirm_embed,
+                view=DeleteConfirmView(self, container_name, self.owner_id, actual_idx, node_id),
+                ephemeral=True
+            )
+            return
+        # ---------- END DELETE SELF ----------
+
         if action == 'stats':
             stats = await get_container_stats(container_name, node_id)
             stats_embed = create_info_embed("📈 Live Statistics", f"Real-time stats for `{container_name}`")
@@ -3817,7 +3960,8 @@ async def quick_help(ctx):
         "• In `!manage`: Click ⏸ to stop VPS\n"
         "• In `!manage`: Click 🔑 for SSH access\n"
         "• In `!manage`: Click 📊 for live stats\n"
-        "• In `!manage`: Click 🔄 to reinstall OS", False)
+        "• In `!manage`: Click 🔄 to reinstall OS\n"
+        "• In `!manage`: Click 🗑️ to delete your VPS", False)
     
     # Troubleshooting
     add_field(embed, "🔧 Common Issues", 
@@ -4002,7 +4146,6 @@ async def node_cmd(ctx, sub: str, *args):
             add_field(embed, "URL", node['url'], False)
         await ctx.send(embed=embed)
     
-    # NEW: Add delete subcommand
     elif sub == 'delete':
         if not args:
             await ctx.send(embed=create_error_embed("Usage", f"{PREFIX}node delete <id> [force]"))
@@ -4026,19 +4169,16 @@ async def node_cmd(ctx, sub: str, *args):
             await ctx.send(embed=create_error_embed("Not Found", "Node not found."))
             return
         
-        # Check if this is the local node
         if node['is_local']:
             await ctx.send(embed=create_error_embed("Cannot Delete", "Cannot delete the local node."))
             return
         
-        # Check if node has any VPS assigned
         vps_count = get_current_vps_count(node_id)
         if not force and vps_count > 0:
             await ctx.send(embed=create_error_embed("Cannot Delete", 
                 f"Node has {vps_count} VPS assigned. Migrate or delete them first, or use 'force' to delete all VPS and the node."))
             return
         
-        # Prepare warning message
         warning_msg = f"Are you sure you want to delete node **{node['name']}** (ID: {node_id})?\n\n"
         warning_msg += f"**Location:** {node['location']}\n"
         warning_msg += f"**Tags:** {', '.join(node['tags'])}\n\n"
@@ -4071,10 +4211,8 @@ async def node_cmd(ctx, sub: str, *args):
                 cur = conn.cursor()
                 
                 if self.force and self.vps_count > 0:
-                    # Force delete all VPS on this node
                     cur.execute('DELETE FROM vps WHERE node_id = ?', (self.node_id,))
                 
-                # Delete the node from database
                 cur.execute('DELETE FROM nodes WHERE id = ?', (self.node_id,))
                 
                 conn.commit()
@@ -4106,7 +4244,6 @@ async def node_cmd(ctx, sub: str, *args):
         await ctx.send(embed=embed, view=ConfirmDelete(node_id, node['name'], force, vps_count))
     
     elif sub == 'status':
-        # New: Check node status
         if not args:
             await ctx.send(embed=create_error_embed("Usage", f"{PREFIX}node status <id>"))
             return
@@ -4170,7 +4307,6 @@ async def node_cmd(ctx, sub: str, *args):
         await ctx.send(embed=embed)
     
     else:
-        # Show help for node command
         embed = create_info_embed("Node Management", 
             f"Manage multi-node infrastructure for {BOT_NAME}")
 
@@ -4179,7 +4315,6 @@ class HelpView(discord.ui.View):
         super().__init__(timeout=300)
         self.ctx = ctx
         self.current_category = "user"
-        # Command categories
         self.command_categories = {
             "user": {
                 "name": "👤 User Commands",
@@ -4291,15 +4426,11 @@ class HelpView(discord.ui.View):
         self.add_item(self.select)
 
     def update_select(self):
-        """Update the category selection dropdown based on user permissions"""
         self.select = discord.ui.Select(placeholder="Select Category", options=[])
         user_id = str(self.ctx.author.id)
         is_admin_user = user_id in main_admin_ids or user_id in admin_data.get("admins", [])
         is_main_admin_user = user_id in main_admin_ids
-       
-        # Add all categories that user has access to
         options = []
-        # Always show basic categories
         basic_categories = ["user", "vps", "ports", "system", "bot"]
         for category in basic_categories:
             options.append(discord.SelectOption(
@@ -4307,45 +4438,36 @@ class HelpView(discord.ui.View):
                 value=category,
                 emoji=self.get_category_emoji(category)
             ))
-       
-        # Add nodes category if admin
         if is_admin_user:
             options.append(discord.SelectOption(
                 label=self.command_categories["nodes"]["name"],
                 value="nodes",
                 emoji=self.get_category_emoji("nodes")
             ))
-       
-        # Add admin categories if user has permissions
         if is_admin_user:
             options.append(discord.SelectOption(
                 label=self.command_categories["admin"]["name"],
                 value="admin",
                 emoji=self.get_category_emoji("admin")
             ))
-       
         if is_main_admin_user:
             options.append(discord.SelectOption(
                 label=self.command_categories["main_admin"]["name"],
                 value="main_admin",
                 emoji=self.get_category_emoji("main_admin")
             ))
-       
         self.select.options = options
         self.select.callback = self.select_callback
    
     async def select_callback(self, interaction: discord.Interaction):
-        """Handle category selection"""
         if interaction.user != self.ctx.author:
             await interaction.response.send_message("This menu is not for you!", ephemeral=True)
             return
-        
         self.current_category = interaction.data['values'][0]
         self.update_embed()
         await interaction.response.edit_message(embed=self.embed, view=self)
 
     def get_category_emoji(self, category):
-        """Get emoji for each category"""
         emojis = {
             "user": "👤",
             "vps": "🖥️",
@@ -4359,25 +4481,20 @@ class HelpView(discord.ui.View):
         return emojis.get(category, "📁")
    
     def update_embed(self):
-        """Update the embed based on current category and user permissions"""
         category_data = self.command_categories[self.current_category]
-        # Create embed with category-specific styling
         colors = {
-            "user": 0x3498db, # Blue
-            "vps": 0x2ecc71, # Green
-            "ports": 0xe74c3c, # Red
-            "system": 0xf39c12, # Orange
-            "bot": 0x9b59b6, # Purple
-            "nodes": 0x1abc9c, # Teal
-            "admin": 0xe67e22, # Carrot
-            "main_admin": 0xf1c40f # Yellow
+            "user": 0x3498db,
+            "vps": 0x2ecc71,
+            "ports": 0xe74c3c,
+            "system": 0xf39c12,
+            "bot": 0x9b59b6,
+            "nodes": 0x1abc9c,
+            "admin": 0xe67e22,
+            "main_admin": 0xf1c40f
         }
         color = colors.get(self.current_category, 0x1a1a1a)
-       
         title = f"📚 {BOT_NAME} Command Help - {category_data['name']}"
         description = f"**{category_data['name']}**\nUse the dropdown below to switch categories."
-       
-        # Add helpful tips based on category
         tips = {
             "user": "Tip: Use `!myvps` to see all your VPS and `!manage` to control them.",
             "vps": "Tip: Snapshots are useful before making major changes to your VPS.",
@@ -4387,17 +4504,11 @@ class HelpView(discord.ui.View):
             "admin": "Tip: Always check `!userinfo @user` before modifying VPS.",
             "main_admin": "Tip: Be careful when adding/removing admin privileges."
         }
-       
         if self.current_category in tips:
             description += f"\n\n💡 {tips[self.current_category]}"
-       
         self.embed = create_embed(title, description, color)
-       
-        # Add commands to embed
         commands_text = "\n".join([f"**{cmd}** - {desc}" for cmd, desc in category_data["commands"]])
         add_field(self.embed, "Commands", commands_text, False)
-       
-        # Add appropriate footer based on category
         footers = {
             "user": f"{BOT_NAME} VPS Manager • User Commands • Need help? Contact admin",
             "vps": f"{BOT_NAME} VPS Manager • VPS Management • Snapshots • Cloning",
@@ -4408,18 +4519,15 @@ class HelpView(discord.ui.View):
             "admin": f"{BOT_NAME} VPS Manager • Admin Panel • Restricted Access",
             "main_admin": f"{BOT_NAME} VPS Manager • Main Admin • Full System Control"
         }
-       
         self.embed.set_footer(text=footers.get(self.current_category, f"{BOT_NAME} VPS Manager"))
 
 
 @bot.command(name='help')
 async def show_help(ctx):
-    """Display the interactive help menu"""
     view = HelpView(ctx)
     await ctx.send(embed=view.embed, view=view)
 
 
-# Command aliases for typos and convenience
 @bot.command(name='mangage')
 async def manage_typo(ctx):
     await ctx.send(embed=create_info_embed("Command Correction", f"Did you mean `{PREFIX}manage`? Use the correct command."))
@@ -4427,7 +4535,6 @@ async def manage_typo(ctx):
 
 @bot.command(name='commands')
 async def commands_alias(ctx):
-    """Alias for help command"""
     await show_help(ctx)
 
 
@@ -4448,6 +4555,7 @@ async def info_alias(ctx, user: discord.Member = None):
             await ctx.send(embed=create_error_embed("Usage", f"Please specify a user: `{PREFIX}info @user`"))
     else:
         await ctx.send(embed=create_error_embed("Access Denied", "This command requires admin privileges."))
+
 # Run the bot
 if __name__ == "__main__":
     if DISCORD_TOKEN:
