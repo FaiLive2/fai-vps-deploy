@@ -17,6 +17,7 @@ import requests
 import secrets
 import string
 import re
+import base64
 
 # Load environment variables
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN', '')
@@ -623,16 +624,57 @@ def generate_password(length: int = 16) -> str:
     alphabet = string.ascii_letters + string.digits
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
-async def setup_ssh_access(container_name: str, node_id: int) -> str:
-    """Installs openssh-server, sets a random root password, and enables
-    password-based root SSH login inside the container. Returns the password."""
+async def setup_ssh_access(container_name: str, node_id: int, user_id: str, vps_count: int, config_str: str) -> str:
+    """Installs openssh-server, sets a random root password, configures the welcome banner and prompt."""
     password = generate_password()
+    
+    # Custom Welcome MOTD with color and animation
+    motd_script = f"""#!/bin/bash
+clear
+echo -e "\\e[1;36m"
+echo "  ███████╗ █████╗ ██╗    ██╗     ██╗██╗   ██╗███████╗██████╗ "
+echo "  ██╔════╝██╔══██╗██║    ██║     ██║██║   ██║██╔════╝╚════██╗"
+echo "  █████╗  ███████║██║    ██║     ██║██║   ██║█████╗   █████╔╝"
+echo "  ██╔══╝  ██╔══██║██║    ██║     ██║╚██╗ ██╔╝██╔══╝   ╚═══██╗"
+echo "  ██║     ██║  ██║██║    ███████╗██║ ╚████╔╝ ███████╗██████╔╝"
+echo "  ╚═╝     ╚═╝  ╚═╝╚═╝    ╚══════╝╚═╝  ╚═══╝  ╚══════╝╚═════╝ "
+echo -e "\\e[0m"
+echo -e "\\e[1;32mWelcome {{$USER}} to FaiLive2 Cloud!\\e[0m"
+echo "------------------------------------------------------------"
+echo -e "\\e[1;33mIP Address:\\e[0m $(hostname -I | awk '{{print $1}}')"
+echo -e "\\e[1;33mVPS Name:  \\e[0m {container_name}"
+echo -e "\\e[1;33mConfig:    \\e[0m {config_str}"
+echo -e "\\e[1;33mOS:        \\e[0m $(lsb_release -d | cut -f2)"
+echo "------------------------------------------------------------"
+echo -e "\\e[1;36m• Root Access: Enabled"
+echo -e "• Support: t.me/FaiLive2"
+echo -e "• Thank you for choosing FaiLive2 Cloud!\\e[0m"
+echo ""
+"""
+    b64_motd = base64.b64encode(motd_script.encode()).decode()
+    
+    # We write this to .bash_profile which runs AFTER login and password input.
+    # The prompt format is set to root@failive-cloud-{vps_count}:~#
+    profile_script = f"""#!/bin/bash
+source /etc/profile.d/failive2_welcome.sh
+export PS1="\\[\\e[1;31m\\]root@failive-cloud-{vps_count}\\[\\e[0m\\]:\\[\\e[1;34m\\]~# \\[\\e[0m\\]"
+"""
+    b64_profile = base64.b64encode(profile_script.encode()).decode()
+
     commands = [
         "DEBIAN_FRONTEND=noninteractive apt-get update -y",
-        "DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server",
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server lsb-release",
         f"echo 'root:{password}' | chpasswd",
         "printf 'PermitRootLogin yes\\nPasswordAuthentication yes\\n\\n' | cat - /etc/ssh/sshd_config > /tmp/sshd_config.new && mv /tmp/sshd_config.new /etc/ssh/sshd_config",
         "mkdir -p /run/sshd",
+        # Write the welcome script
+        f"echo '{b64_motd}' | base64 -d > /etc/profile.d/failive2_welcome.sh",
+        "chmod +x /etc/profile.d/failive2_welcome.sh",
+        # Write the profile script to auto-run welcome and change prompt
+        f"echo '{b64_profile}' | base64 -d > /root/.bash_profile",
+        "chmod +x /root/.bash_profile",
+        # Also append to .bashrc for non-login shells just in case
+        f"echo 'export PS1=\"\\[\\e[1;31m\\]root@failive-cloud-{vps_count}\\[\\e[0m\\]:\\[\\e[1;34m\\]~# \\[\\e[0m\\]\"' >> /root/.bashrc",
         "systemctl enable ssh 2>/dev/null || systemctl enable sshd 2>/dev/null || true",
         "systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || service ssh restart 2>/dev/null || service sshd restart 2>/dev/null || true"
     ]
@@ -1279,6 +1321,7 @@ class OSSelectView(discord.ui.View):
         vps_count = len(vps_data[user_id]) + 1
         container_name = f"{BOT_NAME.lower()}-vps-{user_id}-{vps_count}"
         ram_mb = self.ram * 1024
+        config_str = f"{self.ram}GB RAM / {self.cpu} CPU / {self.disk}GB Disk"
         try:
             await execute_lxc(container_name, f"init {os_version} {container_name} -s {DEFAULT_STORAGE_POOL}", node_id=self.node_id)
             await execute_lxc(container_name, f"config set {container_name} limits.memory {ram_mb}MB", node_id=self.node_id)
@@ -1287,9 +1330,11 @@ class OSSelectView(discord.ui.View):
             await apply_lxc_config(container_name, self.node_id)
             await safe_start_container(container_name, self.node_id)
             await apply_internal_permissions(container_name, self.node_id)
-            root_password = await setup_ssh_access(container_name, self.node_id)
+            
+            # Use the updated setup_ssh_access that writes the welcome & prompt
+            root_password = await setup_ssh_access(container_name, self.node_id, user_id, vps_count, config_str)
             pinggy_address = await establish_pinggy_tunnel(container_name, self.node_id)
-            config_str = f"{self.ram}GB RAM / {self.cpu} CPU / {self.disk}GB Disk"
+            
             vps_info = {
                 "container_name": container_name,
                 "node_id": self.node_id,
@@ -1379,7 +1424,6 @@ class ReinstallOSSelectView(discord.ui.View):
         await interaction.response.edit_message(embed=creating_embed, view=self)
         ram_mb = self.ram_gb * 1024
         try:
-            # No need to delete again; already deleted in confirmation
             await execute_lxc(self.container_name, f"init {os_version} {self.container_name} -s {DEFAULT_STORAGE_POOL}", node_id=self.node_id)
             await execute_lxc(self.container_name, f"config set {self.container_name} limits.memory {ram_mb}MB", node_id=self.node_id)
             await execute_lxc(self.container_name, f"config set {self.container_name} limits.cpu {self.cpu}", node_id=self.node_id)
@@ -1387,18 +1431,20 @@ class ReinstallOSSelectView(discord.ui.View):
             await apply_lxc_config(self.container_name, self.node_id)
             await execute_lxc(self.container_name, f"start {self.container_name}", node_id=self.node_id)
             await apply_internal_permissions(self.container_name, self.node_id)
-            root_password = await setup_ssh_access(self.container_name, self.node_id)
+            
+            config_str = f"{self.ram_gb}GB RAM / {self.cpu} CPU / {self.storage_gb}GB Disk"
+            root_password = await setup_ssh_access(self.container_name, self.node_id, self.owner_id, self.actual_idx + 1, config_str)
             pinggy_address = await establish_pinggy_tunnel(self.container_name, self.node_id)
+            
             target_vps = vps_data[self.owner_id][self.actual_idx]
             target_vps["os_version"] = os_version
             target_vps["status"] = "running"
-            target_vps["suspended"] = False
-            target_vps["created_at"] = datetime.now().isoformat()
+            target_vps["suspended"] = False            target_vps["created_at"] = datetime.now().isoformat()
             target_vps["root_password"] = root_password
             target_vps["pinggy_address"] = pinggy_address
-            config_str = f"{self.ram_gb}GB RAM / {self.cpu} CPU / {self.storage_gb}GB Disk"
             target_vps["config"] = config_str
             save_vps_data()
+            
             success_embed = create_success_embed("Reinstall Complete", f"VPS `{self.container_name}` has been successfully reinstalled!")
             add_field(success_embed, "Resources", f"**RAM:** {self.ram_gb}GB\n**CPU:** {self.cpu} Cores\n**Storage:** {self.storage_gb}GB", False)
             add_field(success_embed, "OS", os_version, True)
@@ -4591,4 +4637,3 @@ if __name__ == "__main__":
         bot.run(DISCORD_TOKEN)
     else:
         logger.error("No Discord token found in DISCORD_TOKEN environment variable.")
-        
