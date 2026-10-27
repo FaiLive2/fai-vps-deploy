@@ -761,7 +761,7 @@ async def establish_pinggy_tunnel(container_name: str, node_id: int, retries: in
     logger.warning(f"Pinggy: no tunnel address found for {container_name} after {retries} attempts")
     return None
 
-# Get or create VPS role (FaiLive2-VPS-USER)
+# Get or create VPS role (•FaiLive2 Cloud || PAID-VPS-User)
 async def get_or_create_vps_role(guild):
     global VPS_USER_ROLE_ID
 
@@ -769,7 +769,7 @@ async def get_or_create_vps_role(guild):
     if not me or not me.guild_permissions.manage_roles:
         return None
 
-    role_name = "FaiLive2-VPS-USER"
+    role_name = "•FaiLive2 Cloud || PAID-VPS-User"
 
     # Try cached role
     if VPS_USER_ROLE_ID:
@@ -4638,4 +4638,4 @@ if __name__ == "__main__":
         bot.run(DISCORD_TOKEN)
     else:
         logger.error("No Discord token found in DISCORD_TOKEN environment variable.")
-            
+                            
