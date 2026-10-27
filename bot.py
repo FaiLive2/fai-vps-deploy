@@ -21,7 +21,7 @@ import re
 # Load environment variables
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN', '')
 BOT_NAME = os.getenv('BOT_NAME', 'FaiLive2 Cloud')
-PREFIX = os.getenv('PREFIX', '!')
+PREFIX = os.getenv('PREFIX', '1')
 YOUR_SERVER_IP = os.getenv('YOUR_SERVER_IP', '127.0.0.1')
 
 # ---- Public IP detection (used for SSH login info shown to users) ----
@@ -1043,7 +1043,7 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         return
     elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(embed=create_error_embed("Missing Argument", "Please check command usage with `!help`."))
+        await ctx.send(embed=create_error_embed("Missing Argument", f"Please check command usage with `{PREFIX}help`."))
     elif isinstance(error, commands.BadArgument):
         await ctx.send(embed=create_error_embed("Invalid Argument", "Please check your input and try again."))
     elif isinstance(error, commands.CheckFailure):
@@ -2104,7 +2104,7 @@ async def vps_list(ctx, node_id: int = 1):
     else:
         add_field(embed, "📋 **VPS List**", "No deployments yet. Launch one! 🚀", False)
 
-    embed.set_footer(text=f"Refresh with !vps-list {node_id} | {len(vps_info)} shown")
+    embed.set_footer(text=f"Refresh with {PREFIX}vps-list {node_id} | {len(vps_info)} shown")
     await ctx.send(embed=embed)
 
 @bot.command(name='list-all')
@@ -2343,7 +2343,7 @@ async def ports_command(ctx, subcmd: str = None, *args):
             add_field(embed, "Quota Update", f"Used: {used - 1}/{allocated}", False)
             await ctx.send(embed=embed)
         else:
-            await ctx.send(embed=create_error_embed("Not Found", "Forward ID not found. Use !ports list."))
+            await ctx.send(embed=create_error_embed("Not Found", "Forward ID not found. Use {PREFIX}ports list."))
     else:
         await ctx.send(embed=create_error_embed("Invalid Subcommand", f"Use: add <vps_num> <port>, list, remove <id>"))
 
@@ -3946,41 +3946,41 @@ async def quick_help(ctx):
     is_admin_user = user_id in main_admin_ids or user_id in admin_data.get("admins", [])
     
     embed = create_info_embed("🚀 Quick Help Reference", 
-        "Quick reference for common tasks. Use `!help` for complete command list.")
+        f"Quick reference for common tasks. Use `{PREFIX}help` for complete command list.")
     
     # Common user tasks
     add_field(embed, "👤 For Users", 
-        "• `!myvps` - List your VPS\n"
-        "• `!manage` - Start/stop/manage VPS\n"
-        "• `!ports` - Manage port forwarding\n"
-        "• `!share-user @user 1` - Share VPS #1\n"
-        "• `!about` - Bot information", False)
+        f"• `{PREFIX}myvps` - List your VPS\n"
+        f"• `{PREFIX}manage` - Start/stop/manage VPS\n"
+        f"• `{PREFIX}ports` - Manage port forwarding\n"
+        f"• `{PREFIX}share-user @user 1` - Share VPS #1\n"
+        f"• `{PREFIX}about` - Bot information", False)
     
     # VPS management
     add_field(embed, "🖥️ VPS Control", 
-        "• In `!manage`: Click ▶ to start VPS\n"
-        "• In `!manage`: Click ⏸ to stop VPS\n"
-        "• In `!manage`: Click 🔑 for SSH access\n"
-        "• In `!manage`: Click 📊 for live stats\n"
-        "• In `!manage`: Click 🔄 to reinstall OS\n"
-        "• In `!manage`: Click 🗑️ to delete your VPS", False)
+        f"• In `{PREFIX}manage`: Click ▶ to start VPS\n"
+        f"• In `{PREFIX}manage`: Click ⏸ to stop VPS\n"
+        f"• In `{PREFIX}manage`: Click 🔑 for SSH access\n"
+        f"• In `{PREFIX}manage`: Click 📊 for live stats\n"
+        f"• In `{PREFIX}manage`: Click 🔄 to reinstall OS\n"
+        f"• In `{PREFIX}manage`: Click 🗑️ to delete your VPS", False)
     
     # Troubleshooting
     add_field(embed, "🔧 Common Issues", 
-        "• Ports not working? Use `!repair-ports <container>` (admin)\n"
-        "• VPS suspended? Contact admin to unsuspend\n"
-        "• Need more resources? Contact admin for upgrade\n"
-        "• SSH not working? Try reinstall with different OS", False)
+        f"• Ports not working? Use `{PREFIX}repair-ports <container>` (admin)\n"
+        f"• VPS suspended? Contact admin to unsuspend\n"
+        f"• Need more resources? Contact admin for upgrade\n"
+        f"• SSH not working? Try reinstall with different OS", False)
     
     if is_admin_user:
         add_field(embed, "🛡️ Admin Quick Actions", 
-            "• `!create 2 2 20 @user` - Create 2GB/2CPU/20GB VPS\n"
-            "• `!userinfo @user` - Check user details\n"
-            "• `!node list` - List all nodes\n"
-            "• `!serverstats` - System overview\n"
-            "• `!suspend-vps <container> <reason>` - Suspend VPS", False)
+            f"• `{PREFIX}create 2 2 20 @user` - Create 2GB/2CPU/20GB VPS\n"
+            f"• `{PREFIX}userinfo @user` - Check user details\n"
+            f"• `{PREFIX}node list` - List all nodes\n"
+            f"• `{PREFIX}serverstats` - System overview\n"
+            f"• `{PREFIX}suspend-vps <container> <reason>` - Suspend VPS", False)
     
-    embed.set_footer(text=f"{BOT_NAME} VPS Manager • Use !help for complete command list")
+    embed.set_footer(text=f"{BOT_NAME} VPS Manager • Use {PREFIX}help for complete command list")
     await ctx.send(embed=embed)
 
 @bot.command(name='help-search')
@@ -4035,7 +4035,7 @@ async def help_search(ctx, *, search_term: str = None):
     if len(matches) > 15:
         add_field(embed, "Note", f"Showing 15 of {len(matches)} matches. Try a more specific search.", False)
     
-    embed.set_footer(text=f"{BOT_NAME} VPS Manager • Use !help for complete list")
+    embed.set_footer(text=f"{BOT_NAME} VPS Manager • Use {PREFIX}help for complete list")
     await ctx.send(embed=embed)    
 
 @bot.command(name='node')
@@ -4516,13 +4516,13 @@ class HelpView(discord.ui.View):
        
         # Add helpful tips based on category
         tips = {
-            "user": "Tip: Use `!myvps` to see all your VPS and `!manage` to control them.",
-            "vps": "Tip: Snapshots are useful before making major changes to your VPS.",
-            "ports": "Tip: Port forwards work for both TCP and UDP protocols.",
-            "system": "Tip: Set thresholds to monitor resource usage across nodes.",
-            "nodes": "Tip: Use `!node list` to see all available nodes and their status.",
-            "admin": "Tip: Always check `!userinfo @user` before modifying VPS.",
-            "main_admin": "Tip: Be careful when adding/removing admin privileges."
+            "user": f"Tip: Use `{PREFIX}myvps` to see all your VPS and `{PREFIX}manage` to control them.",
+            "vps": f"Tip: Snapshots are useful before making major changes to your VPS.",
+            "ports": f"Tip: Port forwards work for both TCP and UDP protocols.",
+            "system": f"Tip: Set thresholds to monitor resource usage across nodes.",
+            "nodes": f"Tip: Use `{PREFIX}node list` to see all available nodes and their status.",
+            "admin": f"Tip: Always check `{PREFIX}userinfo @user` before modifying VPS.",
+            "main_admin": f"Tip: Be careful when adding/removing admin privileges."
         }
        
         if self.current_category in tips:
@@ -4591,3 +4591,4 @@ if __name__ == "__main__":
         bot.run(DISCORD_TOKEN)
     else:
         logger.error("No Discord token found in DISCORD_TOKEN environment variable.")
+        
