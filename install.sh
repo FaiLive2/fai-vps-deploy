@@ -33,7 +33,7 @@ ascii_banner() {
     rainbow_line '| _ \ (_) || |   | |__ >  < (__  | _|| |) | |  | |  | | (_) | .` |'
     rainbow_line '|___/\___/ |_|   |____/_/\_\___| |___|___/___| |_| |___\___/|_|\_|'
     echo ""
-    rainbow_line '                    ~ Made by DBGAMING ~'
+    rainbow_line '                    ~ Made by FaiLive2 ~'
     echo ""
 }
 
@@ -163,7 +163,7 @@ RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 Environment=DISCORD_TOKEN=${DISCORD_TOKEN}
 Environment=MAIN_ADMIN_ID=${MAIN_ADMIN_ID}
-Environment=BOT_NAME=DB-v2
+Environment=BOT_NAME=FaiLive2 Cloud
 
 [Install]
 WantedBy=multi-user.target
