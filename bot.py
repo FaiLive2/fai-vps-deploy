@@ -628,7 +628,7 @@ async def setup_ssh_access(container_name: str, node_id: int, user_id: str, vps_
     """Installs openssh-server, sets a random root password, configures the welcome banner and prompt."""
     password = generate_password()
     
-    # Custom Welcome MOTD with color and animation
+    # Custom Welcome MOTD with color and animation (FaiLive2 Cloud)
     motd_script = f"""#!/bin/bash
 clear
 echo -e "\\e[1;36m"
@@ -639,7 +639,7 @@ echo "  ██╔══╝  ██╔══██║██║    ██║     �
 echo "  ██║     ██║  ██║██║    ███████╗██║ ╚████╔╝ ███████╗██████╔╝"
 echo "  ╚═╝     ╚═╝  ╚═╝╚═╝    ╚══════╝╚═╝  ╚═══╝  ╚══════╝╚═════╝ "
 echo -e "\\e[0m"
-echo -e "\\e[1;32mWelcome {{$USER}} to FaiLive2 Cloud!\\e[0m"
+echo -e "\\e[1;32mWelcome to FaiLive2 Cloud VPS!\\e[0m"
 echo "------------------------------------------------------------"
 echo -e "\\e[1;33mIP Address:\\e[0m $(hostname -I | awk '{{print $1}}')"
 echo -e "\\e[1;33mVPS Name:  \\e[0m {container_name}"
@@ -647,17 +647,17 @@ echo -e "\\e[1;33mConfig:    \\e[0m {config_str}"
 echo -e "\\e[1;33mOS:        \\e[0m $(lsb_release -d | cut -f2)"
 echo "------------------------------------------------------------"
 echo -e "\\e[1;36m• Root Access: Enabled"
-echo -e "• Support: t.me/FaiLive2"
-echo -e "• Thank you for choosing FaiLive2 Cloud!\\e[0m"
+echo -e "• DC Support: https://discord.gg/YvNGxjrpXs"
+echo -e "• Thank you for choosing FaiLive2 Cloud VPS!\\e[0m"
 echo ""
 """
     b64_motd = base64.b64encode(motd_script.encode()).decode()
     
     # We write this to .bash_profile which runs AFTER login and password input.
-    # The prompt format is set to root@failive-cloud-{vps_count}:~#
+    # The prompt format is set to root@failive2-cloud-paid-user-{user_id}:~#
     profile_script = f"""#!/bin/bash
 source /etc/profile.d/failive2_welcome.sh
-export PS1="\\[\\e[1;31m\\]root@failive-cloud-{vps_count}\\[\\e[0m\\]:\\[\\e[1;34m\\]~# \\[\\e[0m\\]"
+export PS1="\\[\\e[1;31m\\]root@failive2-cloud-paid-user-{user_id}\\[\\e[0m\\]:\\[\\e[1;34m\\]~# \\[\\e[0m\\]"
 """
     b64_profile = base64.b64encode(profile_script.encode()).decode()
 
@@ -674,7 +674,7 @@ export PS1="\\[\\e[1;31m\\]root@failive-cloud-{vps_count}\\[\\e[0m\\]:\\[\\e[1;3
         f"echo '{b64_profile}' | base64 -d > /root/.bash_profile",
         "chmod +x /root/.bash_profile",
         # Also append to .bashrc for non-login shells just in case
-        f"echo 'export PS1=\"\\[\\e[1;31m\\]root@failive-cloud-{vps_count}\\[\\e[0m\\]:\\[\\e[1;34m\\]~# \\[\\e[0m\\]\"' >> /root/.bashrc",
+        f"echo 'export PS1=\"\\[\\e[1;31m\\]root@failive2-cloud-paid-user-{user_id}\\[\\e[0m\\]:\\[\\e[1;34m\\]~# \\[\\e[0m\\]\"' >> /root/.bashrc",
         "systemctl enable ssh 2>/dev/null || systemctl enable sshd 2>/dev/null || true",
         "systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || service ssh restart 2>/dev/null || service sshd restart 2>/dev/null || true"
     ]
@@ -1439,7 +1439,8 @@ class ReinstallOSSelectView(discord.ui.View):
             target_vps = vps_data[self.owner_id][self.actual_idx]
             target_vps["os_version"] = os_version
             target_vps["status"] = "running"
-            target_vps["suspended"] = False            target_vps["created_at"] = datetime.now().isoformat()
+            target_vps["suspended"] = False
+            target_vps["created_at"] = datetime.now().isoformat()
             target_vps["root_password"] = root_password
             target_vps["pinggy_address"] = pinggy_address
             target_vps["config"] = config_str
@@ -4637,3 +4638,4 @@ if __name__ == "__main__":
         bot.run(DISCORD_TOKEN)
     else:
         logger.error("No Discord token found in DISCORD_TOKEN environment variable.")
+            
