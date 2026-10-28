@@ -568,7 +568,7 @@ async def safe_start_container(container_name: str, node_id: int):
         else:
             raise
 
-# Apply LXC config
+# Apply LXC config (Fix for Docker/Pterodactyl)
 async def apply_lxc_config(container_name: str, node_id: int):
     try:
         await execute_lxc(container_name, f"config set {container_name} security.nesting true", node_id=node_id)
@@ -576,10 +576,14 @@ async def apply_lxc_config(container_name: str, node_id: int):
         await execute_lxc(container_name, f"config set {container_name} security.syscalls.intercept.mknod true", node_id=node_id)
         await execute_lxc(container_name, f"config set {container_name} security.syscalls.intercept.setxattr true", node_id=node_id)
         await execute_lxc(container_name, f"config set {container_name} linux.kernel_modules overlay,loop,nf_nat,ip_tables,ip6_tables,netlink_diag,br_netfilter", node_id=node_id)
+        
+        # Add FUSE device safely
         try:
             await execute_lxc(container_name, f"config device add {container_name} fuse unix-char path=/dev/fuse", node_id=node_id)
-        except:
+        except Exception:
             pass
+            
+        # This raw.lxc allows Docker to bypass AppArmor and fix the sysctl permission error
         raw_lxc_config = (
             "lxc.apparmor.profile = unconfined\n"
             "lxc.apparmor.allow_nesting = 1\n"
@@ -4638,4 +4642,3 @@ if __name__ == "__main__":
         bot.run(DISCORD_TOKEN)
     else:
         logger.error("No Discord token found in DISCORD_TOKEN environment variable.")
-                            
